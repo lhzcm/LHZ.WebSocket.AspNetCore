@@ -84,47 +84,41 @@ public static class WebSocketBuilderExtensions
     /// <returns>The application builder instance.</returns>
     public static IApplicationBuilder UseWebSocket(this IApplicationBuilder app, WebSocketUpgradeDelegate webSocketUpgradeDelegate, int timeOut = 10)
     {
-        if(!_webSocketClients.TryGetValue(app, out var clients))
+        if (!_webSocketClients.TryGetValue(app, out var clients))
         {
             _webSocketClients[app] = new ConcurrentDictionary<Guid, WebSocketClient>();
         }
-
         app.Use(async (context, next) =>
         {
-            var upgradeFeature = context.Features.Get<IHttpUpgradeFeature>();
-            if (upgradeFeature != null)
+            // Check if the request is a WebSocket upgrade request
+            if (!context.Request.Headers.ContainsKey("Upgrade") || context.Request.Headers["Upgrade"] != "websocket")
             {
-                var headers = new LHZ.WebSocket.Http.HttpHeaders();
-                foreach (var header in context.Request.Headers)
+                await next();
+                return;
+            }
+            var headers = new LHZ.WebSocket.Http.HttpHeaders();
+            foreach (var header in context.Request.Headers)
+            {
+                foreach (var value in header.Value)
                 {
-                    foreach(var value in header.Value)
-                    {
-                        headers.Add(header.Key, value);
-                    }
+                    headers.Add(header.Key, value);
                 }
-
-                var httpRequest = new LHZ.WebSocket.Http.HttpRequest(context.Request.GetDisplayUrl(), context.Request.Method, context.Request.Protocol, headers);
-                var httpContext =  LHZ.WebSocket.AspNetCore.Http.HttpContext.GetHttpContext(app, context, timeOut);
-
-                webSocketUpgradeDelegate(httpContext);
-
-                if(httpContext.Status == HttpContextStatus.Upgraded)
-                {
-                    httpContext.WebSocketClient.Open();
-                }
-                else
-                {
-                    httpContext.Dispose();
-                }
-
-                await httpContext.TaskCompletionSource.Task;
+            }
+            var httpRequest = new LHZ.WebSocket.Http.HttpRequest(context.Request.GetDisplayUrl(), context.Request.Method, context.Request.Protocol, headers);
+            var httpContext = LHZ.WebSocket.AspNetCore.Http.HttpContext.GetHttpContext(app, context, timeOut);
+            // Call the provided delegate to handle the WebSocket upgrade request
+            webSocketUpgradeDelegate(httpContext);
+            if (httpContext.Status == HttpContextStatus.Upgraded)
+            {
+                httpContext.WebSocketClient.Open();
             }
             else
             {
-                await next();
+                httpContext.Dispose();
             }
-        });
+            await httpContext.TaskCompletionSource.Task;
 
+        });
         return app;
     }
 }
