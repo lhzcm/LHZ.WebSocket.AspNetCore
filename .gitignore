@@ -1,0 +1,4 @@
+bin/
+obj/
+.vscode/
+LHZ.WebSocket.AspNetCore.Console/

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="LHZ.WebSocket.AspNetCore.Console/LHZ.WebSocket.AspNetCore.Console.csproj" />
+  <Project Path="LHZ.WebSocket.AspNetCore.Test/LHZ.WebSocket.AspNetCore.Test.csproj" />
+  <Project Path="LHZ.WebSocket.AspNetCore/LHZ.WebSocket.AspNetCore.csproj" />
+</Solution>
