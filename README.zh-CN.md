@@ -1,5 +1,7 @@
 # LHZ.WebSocket.AspNetCore
 
+[English](README.md) | 中文
+
 轻量级的 ASP.NET Core 中间件，集成 `LHZ.WebSocket` 库以处理 HTTP 到 WebSocket 的升级并管理活动的 WebSocket 客户端。
 
 ## 概述

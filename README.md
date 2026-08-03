@@ -1,5 +1,7 @@
 # LHZ.WebSocket.AspNetCore
 
+English | [中文](README.zh-CN.md)
+
 A lightweight ASP.NET Core middleware that integrates the `LHZ.WebSocket` library to handle HTTP-to-WebSocket upgrades and manage active WebSocket clients.
 
 ## Overview
