@@ -1,12 +1,12 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Collections.Concurrent;
+using System.Threading.Tasks;
 using LHZ.WebSocket.Enums;
 using LHZ.WebSocket.Interfaces;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http.Extensions;
-using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http;
 
 namespace LHZ.WebSocket.AspNetCore;
 
@@ -15,7 +15,14 @@ namespace LHZ.WebSocket.AspNetCore;
 /// </summary>
 public static class WebSocketBuilderExtensions
 {
-    private static ConcurrentDictionary<IApplicationBuilder, ConcurrentDictionary<Guid, WebSocketClient>> _webSocketClients = new ConcurrentDictionary<IApplicationBuilder, ConcurrentDictionary<Guid, WebSocketClient>>();
+    /// <summary>
+    /// Key under which the per-application client store is kept in <see cref="IApplicationBuilder.Properties"/>.
+    /// Storing the store on the builder itself (instead of a static field) keeps client
+    /// registrations isolated per application and avoids leaking application instances.
+    /// </summary>
+    private const string WebSocketClientsKey = "LHZ.WebSocket.AspNetCore.Clients";
+
+    private static readonly object _storeLock = new object();
 
     /// <summary>
     /// Registers a new WebSocket client for the current application builder.
@@ -24,14 +31,7 @@ public static class WebSocketBuilderExtensions
     /// <param name="client">The WebSocket client to register.</param>
     internal static void AddWebSocketClient(IApplicationBuilder app, WebSocketClient client)
     {
-        if (_webSocketClients.TryGetValue(app, out var clients))
-        {
-            client.OnClientClose += (c) =>
-            {
-                clients.TryRemove(c.ID, out _);
-            };
-            clients[client.ID] = client;
-        }
+        GetOrCreateWebSocketClients(app)[client.ID] = client;
     }
 
     /// <summary>
@@ -41,7 +41,7 @@ public static class WebSocketBuilderExtensions
     /// <param name="client">The WebSocket client to remove.</param>
     internal static void RemoveWebSocketClient(IApplicationBuilder app, WebSocketClient client)
     {
-        if (_webSocketClients.TryGetValue(app, out var clients))
+        if (app.Properties.TryGetValue(WebSocketClientsKey, out var value) && value is ConcurrentDictionary<Guid, WebSocketClient> clients)
         {
             clients.TryRemove(client.ID, out _);
         }
@@ -54,7 +54,7 @@ public static class WebSocketBuilderExtensions
     /// <returns>Active WebSocket clients.</returns>
     public static IEnumerable<WebSocketClient> GetWebSocketClients(this IApplicationBuilder app)
     {
-        if (_webSocketClients.TryGetValue(app, out var clients))
+        if (app.Properties.TryGetValue(WebSocketClientsKey, out var value) && value is ConcurrentDictionary<Guid, WebSocketClient> clients)
         {
             return clients.Values.ToArray();
         }
@@ -68,7 +68,7 @@ public static class WebSocketBuilderExtensions
     /// <returns>The number of active WebSocket clients.</returns>
     public static int GetWebSocketClientCount(this IApplicationBuilder app)
     {
-        if (_webSocketClients.TryGetValue(app, out var clients))
+        if (app.Properties.TryGetValue(WebSocketClientsKey, out var value) && value is ConcurrentDictionary<Guid, WebSocketClient> clients)
         {
             return clients.Count;
         }
@@ -84,30 +84,58 @@ public static class WebSocketBuilderExtensions
     /// <returns>The application builder instance.</returns>
     public static IApplicationBuilder UseWebSocket(this IApplicationBuilder app, WebSocketUpgradeDelegate webSocketUpgradeDelegate, int timeOut = 10)
     {
-        if (!_webSocketClients.TryGetValue(app, out var clients))
+        if (webSocketUpgradeDelegate == null)
         {
-            _webSocketClients[app] = new ConcurrentDictionary<Guid, WebSocketClient>();
+            throw new ArgumentNullException(nameof(webSocketUpgradeDelegate));
         }
+        return UseWebSocket(app, context =>
+        {
+            webSocketUpgradeDelegate(context);
+            return Task.CompletedTask;
+        }, timeOut);
+    }
+
+    /// <summary>
+    /// Adds middleware to handle HTTP upgrade requests for WebSocket with an asynchronous delegate.
+    /// </summary>
+    /// <param name="app">The application builder instance.</param>
+    /// <param name="webSocketUpgradeDelegate">Async delegate called for each WebSocket upgrade request.</param>
+    /// <param name="timeOut">Timeout in seconds for WebSocket upgrade handling.</param>
+    /// <returns>The application builder instance.</returns>
+    public static IApplicationBuilder UseWebSocket(this IApplicationBuilder app, Func<IHttpContext, Task> webSocketUpgradeDelegate, int timeOut = 10)
+    {
+        if (webSocketUpgradeDelegate == null)
+        {
+            throw new ArgumentNullException(nameof(webSocketUpgradeDelegate));
+        }
+        GetOrCreateWebSocketClients(app);
         app.Use(async (context, next) =>
         {
-            // Check if the request is a WebSocket upgrade request
-            if (!context.Request.Headers.ContainsKey("Upgrade") || context.Request.Headers["Upgrade"] != "websocket")
+            // Check if the request is a WebSocket upgrade request.
+            // RFC 7230 §3.2.6: field values are case-insensitive tokens, so compare ignoring case.
+            if (!context.Request.Headers.TryGetValue("Upgrade", out var upgradeValue) ||
+                !string.Equals(upgradeValue, "websocket", StringComparison.OrdinalIgnoreCase))
             {
                 await next();
                 return;
             }
-            var headers = new LHZ.WebSocket.Http.HttpHeaders();
-            foreach (var header in context.Request.Headers)
+
+            var httpContext = Http.HttpContext.GetHttpContext(app, context, timeOut);
+            try
             {
-                foreach (var value in header.Value)
+                // Call the provided delegate to handle the WebSocket upgrade request.
+                await webSocketUpgradeDelegate(httpContext);
+            }
+            catch (WebSocketHandshakeException)
+            {
+                // Invalid handshake request (missing/invalid Sec-WebSocket-* headers):
+                // reject with 400 Bad Request instead of failing with a 500.
+                if (!context.Response.HasStarted)
                 {
-                    headers.Add(header.Key, value);
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
                 }
             }
-            var httpRequest = new LHZ.WebSocket.Http.HttpRequest(context.Request.GetDisplayUrl(), context.Request.Method, context.Request.Protocol, headers);
-            var httpContext = LHZ.WebSocket.AspNetCore.Http.HttpContext.GetHttpContext(app, context, timeOut);
-            // Call the provided delegate to handle the WebSocket upgrade request
-            webSocketUpgradeDelegate(httpContext);
+
             if (httpContext.Status == HttpContextStatus.Upgraded)
             {
                 httpContext.WebSocketClient.Open();
@@ -116,9 +144,33 @@ public static class WebSocketBuilderExtensions
             {
                 httpContext.Dispose();
             }
-            await httpContext.TaskCompletionSource.Task;
 
+            // Keep the request alive until the WebSocket connection is closed.
+            await httpContext.TaskCompletionSource.Task;
         });
         return app;
+    }
+
+    /// <summary>
+    /// Gets the thread-safe client store for the given application builder, creating it on first use.
+    /// </summary>
+    /// <param name="app">The application builder instance.</param>
+    /// <returns>The client store.</returns>
+    private static ConcurrentDictionary<Guid, WebSocketClient> GetOrCreateWebSocketClients(IApplicationBuilder app)
+    {
+        if (app.Properties.TryGetValue(WebSocketClientsKey, out var value) && value is ConcurrentDictionary<Guid, WebSocketClient> clients)
+        {
+            return clients;
+        }
+        lock (_storeLock)
+        {
+            if (app.Properties.TryGetValue(WebSocketClientsKey, out value) && value is ConcurrentDictionary<Guid, WebSocketClient> existing)
+            {
+                return existing;
+            }
+            var created = new ConcurrentDictionary<Guid, WebSocketClient>();
+            app.Properties[WebSocketClientsKey] = created;
+            return created;
+        }
     }
 }

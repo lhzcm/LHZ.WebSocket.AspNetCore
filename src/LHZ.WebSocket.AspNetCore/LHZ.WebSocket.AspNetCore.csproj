@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <TargetFrameworks>NET5;NET6;NET8;NET9;NET10.0</TargetFrameworks>
+    <TargetFrameworks>net5.0;net6.0;net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>

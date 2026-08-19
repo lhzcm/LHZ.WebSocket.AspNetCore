@@ -11,14 +11,15 @@
 ## 功能
 
 - `UseWebSocket` 中间件：处理 WebSocket 升级请求
-- `IHttpContext`：执行 RFC6455 握手并返回 `WebSocketClient`
+- `IHttpContext`：执行 RFC6455 握手（校验 `Sec-WebSocket-Key` / `Sec-WebSocket-Version`）并返回 `WebSocketClient`
+- 同步与异步升级 API：`HttpUpgrade` / `HttpUpgradeAsync`
 - 线程安全的客户端注册与移除
 - 可选的升级超时控制
 
 ## 要求
 
 - .NET 5 / 6 / 8 / 9 / 10
-- 依赖 `LHZ.WebSocket` 包（示例版本：`1.0.2`）
+- 依赖 `LHZ.WebSocket` 包（版本：`1.1.1`）
 
 ## 安装
 
@@ -40,9 +41,9 @@ using Microsoft.AspNetCore.Builder;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-app.UseWebSocket(context =>
+app.UseWebSocket(async context =>
 {
-    var client = context.HttpUpgrade();
+    var client = await context.HttpUpgradeAsync();
     client.OnMessageReceived += (c, message) => c.SendMessage($"Echo: {message}");
     client.OnCloseRecived += (c, reason) => c.Close();
 });
@@ -52,13 +53,14 @@ app.Run();
 
 注意：
 
-- 仅在请求包含 WebSocket 升级时调用委托（通过 `IHttpUpgradeFeature`）。
-- 调用 `context.HttpUpgrade()` 执行握手并创建 `WebSocketClient`。
+- 仅在请求携带 WebSocket `Upgrade` 头时调用委托（按 RFC 7230 大小写不敏感匹配）。
+- 调用 `context.HttpUpgrade()` 或 `await context.HttpUpgradeAsync()` 执行握手并创建 `WebSocketClient`。无效的握手请求（缺少 `Sec-WebSocket-Key` 或版本不是 13）会以 `400 Bad Request` 响应拒绝。
 - 使用 `app.GetWebSocketClientCount()` 和 `app.GetWebSocketClients()` 检查活动客户端。
 
 ## API 摘要
 
 - `UseWebSocket(WebSocketUpgradeDelegate webSocketUpgradeDelegate, int timeOut = 10)` — 添加升级中间件；`timeOut` 为等待升级的秒数上限。
+- `UseWebSocket(Func<IHttpContext, Task> webSocketUpgradeDelegate, int timeOut = 10)` — 同一中间件的异步委托重载。
 - `GetWebSocketClients()` — 返回当前 `IApplicationBuilder` 下的活动 `WebSocketClient` 列表。
 - `GetWebSocketClientCount()` — 返回当前 `IApplicationBuilder` 下的活动客户端数量。
 
