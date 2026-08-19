@@ -5,13 +5,13 @@
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
     <OutputType>Library</OutputType>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>LHZ</Authors>
     <Description>A lightweight ASP.NET Core middleware wrapper for the LHZ.WebSocket library, enabling WebSocket upgrade handling and client tracking in ASP.NET Core applications.</Description>
     <PackageIcon>logo.png</PackageIcon>
     <RepositoryType>Git</RepositoryType>
     <RepositoryUrl>https://github.com/lhzcm/LHZ.WebSocket.AspNetCore</RepositoryUrl>
-    <PackageReleaseNotes>1.0.0：Initial release</PackageReleaseNotes>
+    <PackageReleaseNotes>1.0.1：Simplify WebSocket upgrade detection by checking Upgrade header instead of IHttpUpgradeFeature</PackageReleaseNotes>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -22,7 +22,7 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="LHZ.WebSocket" Version="1.0.2" />
+    <PackageReference Include="LHZ.WebSocket" Version="1.1.1" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\README.md">
