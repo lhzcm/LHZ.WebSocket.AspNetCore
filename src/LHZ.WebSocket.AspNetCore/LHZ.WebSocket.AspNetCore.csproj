@@ -5,13 +5,13 @@
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
     <OutputType>Library</OutputType>
-    <Version>1.0.1</Version>
+    <Version>1.1.1</Version>
     <Authors>LHZ</Authors>
     <Description>A lightweight ASP.NET Core middleware wrapper for the LHZ.WebSocket library, enabling WebSocket upgrade handling and client tracking in ASP.NET Core applications.</Description>
     <PackageIcon>logo.png</PackageIcon>
     <RepositoryType>Git</RepositoryType>
     <RepositoryUrl>https://github.com/lhzcm/LHZ.WebSocket.AspNetCore</RepositoryUrl>
-    <PackageReleaseNotes>1.0.1：Simplify WebSocket upgrade detection by checking Upgrade header instead of IHttpUpgradeFeature</PackageReleaseNotes>
+    <PackageReleaseNotes>1.1.1：Fix invalid TargetFrameworks (net5.0-net10.0) so the package builds again; add async UseWebSocket(Func&lt;IHttpContext, Task&gt;) overload and HttpUpgradeAsync; validate Sec-WebSocket-Key/Sec-WebSocket-Version and reject invalid handshakes with 400; match Upgrade header case-insensitively; store clients per application instead of a static dictionary; add Kestrel integration tests</PackageReleaseNotes>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
