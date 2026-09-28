@@ -22,6 +22,9 @@ public static class HttpContextExtensions
         {
             return httpContext.HttpUpgradeAsync(capacity);
         }
+        // Other IHttpContext implementations only offer the synchronous handshake.
+#pragma warning disable CS0618 // Type or member is obsolete
         return Task.FromResult(context.HttpUpgrade(capacity));
+#pragma warning restore CS0618
     }
 }

@@ -1,19 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net5.0;net6.0;net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
-    <OutputType>Library</OutputType>
-    <Version>1.1.1</Version>
+    <Version>1.2.0</Version>
     <Authors>LHZ</Authors>
     <Description>A lightweight ASP.NET Core middleware wrapper for the LHZ.WebSocket library, enabling WebSocket upgrade handling and client tracking in ASP.NET Core applications.</Description>
     <PackageIcon>logo.png</PackageIcon>
     <RepositoryType>Git</RepositoryType>
     <RepositoryUrl>https://github.com/lhzcm/LHZ.WebSocket.AspNetCore</RepositoryUrl>
-    <PackageReleaseNotes>1.1.1：Fix invalid TargetFrameworks (net5.0-net10.0) so the package builds again; add async UseWebSocket(Func&lt;IHttpContext, Task&gt;) overload and HttpUpgradeAsync; validate Sec-WebSocket-Key/Sec-WebSocket-Version and reject invalid handshakes with 400; match Upgrade header case-insensitively; store clients per application instead of a static dictionary; add Kestrel integration tests</PackageReleaseNotes>
+    <PackageReleaseNotes>1.2.0：Update to LHZ.WebSocket 1.2.0; keep the context status Upgraded after a connection closes instead of reporting it as Rejected, and dispose the upgraded stream; make Dispose idempotent and complete the request with TrySetResult so concurrent close/timeout no longer throws; cancel the handshake timeout watcher once the handshake is claimed, and make status transitions atomic; validate the Connection header and the Sec-WebSocket-Key length; detect the Upgrade token in multi-valued headers; reject a second upgrade attempt on the same context; share the client registry across branched pipelines; mark the synchronous HttpUpgrade obsolete in favour of HttpUpgradeAsync</PackageReleaseNotes>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/lhzcm/LHZ.WebSocket.AspNetCore</PackageProjectUrl>
     <PackageTags>websocket,aspnetcore</PackageTags>
@@ -22,7 +20,8 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="LHZ.WebSocket" Version="1.1.1" />
+    <PackageReference Include="LHZ.WebSocket" Version="1.2.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\README.md">

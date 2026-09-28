@@ -12,7 +12,7 @@ app.UseWebSocket(async (context) =>
         Console.WriteLine($"Received message: {message}");
         client.SendMessage($"Echo: {message}");
     };
-    webSocketClient.OnCloseRecived += (client, msg) =>
+    webSocketClient.OnCloseReceived += (client, msg) =>
     {
         Console.WriteLine($"Client closed: {client.ID}");
         client.Close();
