@@ -11,15 +11,15 @@ This library exposes a minimal middleware extension `UseWebSocket` for ASP.NET C
 ## Features
 
 - `UseWebSocket` middleware for handling WebSocket upgrade requests
-- `IHttpContext` wrapper that performs the RFC6455 handshake (with `Sec-WebSocket-Key` / `Sec-WebSocket-Version` validation) and returns a `WebSocketClient`
-- Synchronous and asynchronous upgrade APIs: `HttpUpgrade` / `HttpUpgradeAsync`
-- Thread-safe registration and removal of connected clients
+- `IHttpContext` wrapper that performs the RFC6455 handshake (validating `Connection`, `Sec-WebSocket-Key` and `Sec-WebSocket-Version`) and returns a `WebSocketClient`
+- Asynchronous upgrade API `HttpUpgradeAsync` (the synchronous `HttpUpgrade` is obsolete)
+- Thread-safe registration and removal of connected clients, shared across branched pipelines
 - Optional upgrade timeout control
 
 ## Requirements
 
 - .NET 5 / 6 / 8 / 9 / 10
-- `LHZ.WebSocket` package (version `1.1.1`)
+- `LHZ.WebSocket` package (version `1.2.0`)
 
 ## Installation
 
@@ -47,7 +47,7 @@ app.UseWebSocket(async context =>
     var client = await context.HttpUpgradeAsync();
 
     client.OnMessageReceived += (c, message) => c.SendMessage($"Echo: {message}");
-    client.OnCloseRecived += (c, reason) => c.Close();
+    client.OnCloseReceived += (c, reason) => c.Close();
 });
 
 app.Run();
@@ -55,16 +55,17 @@ app.Run();
 
 Notes:
 
-- The delegate is invoked only when the request carries a WebSocket `Upgrade` header (matched case-insensitively per RFC 7230).
-- Call `context.HttpUpgrade()` or `await context.HttpUpgradeAsync()` to perform the handshake and create a `WebSocketClient`. Invalid handshake requests (missing `Sec-WebSocket-Key` or a version other than 13) are rejected with a `400 Bad Request` response.
+- The delegate is invoked only when the request carries a WebSocket `Upgrade` header. The token is matched case-insensitively and is also recognised inside a comma-separated field such as `Upgrade: h2c, websocket` (RFC 7230).
+- Call `await context.HttpUpgradeAsync()` to perform the handshake and create a `WebSocketClient`. Invalid handshake requests are rejected with a `400 Bad Request` response: a `Connection` header without the `Upgrade` token, a missing `Sec-WebSocket-Key` or one that is not a base64-encoded 16-byte value, or a `Sec-WebSocket-Version` other than 13.
+- A context can only be upgraded once; a second attempt throws `InvalidOperationException`.
 - Use `app.GetWebSocketClientCount()` and `app.GetWebSocketClients()` to inspect active clients.
 
 ## API Summary
 
 - `UseWebSocket(WebSocketUpgradeDelegate webSocketUpgradeDelegate, int timeOut = 10)` — Adds middleware to handle upgrades; `timeOut` limits seconds to wait for an upgrade.
 - `UseWebSocket(Func<IHttpContext, Task> webSocketUpgradeDelegate, int timeOut = 10)` — Async overload of the same middleware.
-- `GetWebSocketClients()` — Returns active `WebSocketClient` instances for the `IApplicationBuilder`.
-- `GetWebSocketClientCount()` — Returns the number of active clients for the `IApplicationBuilder`.
+- `GetWebSocketClients()` — Returns the active `WebSocketClient` instances for the application. Clients are tracked per application, so those registered from a pipeline branch built by `Map` or `UseWhen` are also returned here.
+- `GetWebSocketClientCount()` — Returns the number of active clients for the application.
 
 ## Example
 
