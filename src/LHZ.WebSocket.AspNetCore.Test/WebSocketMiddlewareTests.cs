@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -244,6 +246,57 @@ public class WebSocketMiddlewareTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => context.HttpUpgradeAsync());
         Assert.Equal(HttpContextStatus.Initialized, context.Status);
+    }
+
+    private sealed class FakeUpgradeFeature : IHttpUpgradeFeature
+    {
+        private readonly Func<Task<Stream>> _upgrade;
+
+        public FakeUpgradeFeature(Func<Task<Stream>> upgrade) => _upgrade = upgrade;
+
+        public bool IsUpgradableRequest => true;
+
+        public Task<Stream> UpgradeAsync() => _upgrade();
+    }
+
+    [Fact]
+    public async Task HttpUpgradeAsync_UpgradeFails_RejectsContext()
+    {
+        // The handshake was claimed (Upgrading) before the transport failed; the context must not
+        // stay stuck in Upgrading.
+        var context = CreateHandshakeContext(c =>
+            c.Features.Set<IHttpUpgradeFeature>(
+                new FakeUpgradeFeature(() => throw new IOException("client went away"))));
+
+        await Assert.ThrowsAsync<IOException>(() => context.HttpUpgradeAsync());
+
+        Assert.Equal(HttpContextStatus.Rejected, context.Status);
+    }
+
+    [Fact]
+    public async Task Dispose_DuringUpgrade_RejectsContextAndReleasesStream()
+    {
+        var upgradeStarted = new TaskCompletionSource();
+        var finishUpgrade = new TaskCompletionSource<Stream>();
+        var stream = new MemoryStream();
+        var context = CreateHandshakeContext(c =>
+            c.Features.Set<IHttpUpgradeFeature>(
+                new FakeUpgradeFeature(() =>
+                {
+                    upgradeStarted.SetResult();
+                    return finishUpgrade.Task;
+                })));
+
+        var upgrade = context.HttpUpgradeAsync();
+        await upgradeStarted.Task;
+        Assert.Equal(HttpContextStatus.Upgrading, context.Status);
+
+        context.Dispose();
+        finishUpgrade.SetResult(stream);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => upgrade);
+        Assert.Equal(HttpContextStatus.Rejected, context.Status);
+        Assert.False(stream.CanRead);
     }
 
     [Fact]

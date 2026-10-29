@@ -56,6 +56,7 @@ app.Run();
 - 仅在请求携带 WebSocket `Upgrade` 头时调用委托。该 token 按 RFC 7230 大小写不敏感匹配，且能识别 `Upgrade: h2c, websocket` 这类逗号分隔的多值字段。
 - 调用 `await context.HttpUpgradeAsync()` 执行握手并创建 `WebSocketClient`。以下无效握手请求会以 `400 Bad Request` 响应拒绝：`Connection` 头不含 `Upgrade` token、缺少 `Sec-WebSocket-Key` 或其不是 base64 编码的 16 字节值、`Sec-WebSocket-Version` 不是 13。
 - 同一个上下文只能升级一次，重复升级会抛出 `InvalidOperationException`。
+- 如果升级本身失败（例如客户端在握手中途断开），上下文状态会变为 `Rejected`，并重新抛出该异常。在握手尚未完成时释放（Dispose）上下文效果相同：挂起的升级会抛出 `InvalidOperationException`，并释放其流。
 - 使用 `app.GetWebSocketClientCount()` 和 `app.GetWebSocketClients()` 检查活动客户端。
 
 ## API 摘要

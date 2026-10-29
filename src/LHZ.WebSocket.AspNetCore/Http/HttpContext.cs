@@ -111,28 +111,28 @@ public class HttpContext : IHttpContext
         // disposed, so a completed request does not leave a pending delay behind.
         var cts = new CancellationTokenSource();
         _timeOutCts = cts;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(timeOut), cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
+        _ = Task.Delay(TimeSpan.FromSeconds(timeOut), cts.Token).ContinueWith(
+            _ => OnHandshakeTimeout(),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnRanToCompletion,
+            TaskScheduler.Default);
+    }
 
-            // Only abort while the handshake has not been claimed yet; once the status moves to
-            // Upgrading the stream belongs to the client and must not be torn down here.
-            if (Interlocked.CompareExchange(
-                    ref _status,
-                    (int)HttpContextStatus.TimedOut,
-                    (int)HttpContextStatus.Initialized) == (int)HttpContextStatus.Initialized)
-            {
-                _httpContext.Abort();
-                _tcs.TrySetResult();
-            }
-        });
+    /// <summary>
+    /// Aborts the request when the handshake was not claimed before the timeout elapsed.
+    /// </summary>
+    private void OnHandshakeTimeout()
+    {
+        // Only abort while the handshake has not been claimed yet; once the status moves to
+        // Upgrading the stream belongs to the client and must not be torn down here.
+        if (Interlocked.CompareExchange(
+                ref _status,
+                (int)HttpContextStatus.TimedOut,
+                (int)HttpContextStatus.Initialized) == (int)HttpContextStatus.Initialized)
+        {
+            _httpContext.Abort();
+            _tcs.TrySetResult();
+        }
     }
 
     /// <summary>
@@ -156,15 +156,10 @@ public class HttpContext : IHttpContext
         _timeOutCts = null;
 
         // Upgraded and TimedOut are terminal; only a context that never completed its
-        // handshake becomes Rejected.
-        Interlocked.CompareExchange(
-            ref _status,
-            (int)HttpContextStatus.Rejected,
-            (int)HttpContextStatus.Initialized);
-        Interlocked.CompareExchange(
-            ref _status,
-            (int)HttpContextStatus.Rejected,
-            (int)HttpContextStatus.NotInitialized);
+        // handshake (including one whose handshake was claimed but never finished) becomes Rejected.
+        MoveToRejected(HttpContextStatus.Initialized);
+        MoveToRejected(HttpContextStatus.Upgrading);
+        MoveToRejected(HttpContextStatus.NotInitialized);
 
         _stream?.Dispose();
         _tcs.TrySetResult();
@@ -184,7 +179,15 @@ public class HttpContext : IHttpContext
     public WebSocketClient HttpUpgrade(int capacity = 1024)
     {
         var upgradeFeature = PrepareUpgrade();
-        _stream = upgradeFeature.UpgradeAsync().GetAwaiter().GetResult();
+        try
+        {
+            _stream = upgradeFeature.UpgradeAsync().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            MoveToRejected(HttpContextStatus.Upgrading);
+            throw;
+        }
         CompleteUpgrade();
 
         return CreateWebSocketClient(capacity);
@@ -198,7 +201,15 @@ public class HttpContext : IHttpContext
     public async Task<WebSocketClient> HttpUpgradeAsync(int capacity = 1024)
     {
         var upgradeFeature = PrepareUpgrade();
-        _stream = await upgradeFeature.UpgradeAsync();
+        try
+        {
+            _stream = await upgradeFeature.UpgradeAsync();
+        }
+        catch
+        {
+            MoveToRejected(HttpContextStatus.Upgrading);
+            throw;
+        }
         CompleteUpgrade();
 
         return CreateWebSocketClient(capacity);
@@ -241,12 +252,33 @@ public class HttpContext : IHttpContext
     /// <summary>
     /// Marks the handshake as finished and stops the timeout watcher.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The context was disposed while the handshake was in progress.</exception>
     private void CompleteUpgrade()
     {
-        Volatile.Write(ref _status, (int)HttpContextStatus.Upgraded);
+        // Dispose may have rejected the context while the handshake was still in flight; in that
+        // case the freshly obtained stream must not be handed to a client.
+        if (Interlocked.CompareExchange(
+                ref _status,
+                (int)HttpContextStatus.Upgraded,
+                (int)HttpContextStatus.Upgrading) != (int)HttpContextStatus.Upgrading)
+        {
+            _stream?.Dispose();
+            throw new InvalidOperationException("The context was disposed while the WebSocket upgrade was in progress.");
+        }
+
         _timeOutCts?.Cancel();
         _timeOutCts?.Dispose();
         _timeOutCts = null;
+    }
+
+    /// <summary>
+    /// Atomically moves the context from <paramref name="from"/> to <see cref="HttpContextStatus.Rejected"/>;
+    /// does nothing when the context is in any other state.
+    /// </summary>
+    /// <param name="from">The only state that may become <see cref="HttpContextStatus.Rejected"/>.</param>
+    private void MoveToRejected(HttpContextStatus from)
+    {
+        Interlocked.CompareExchange(ref _status, (int)HttpContextStatus.Rejected, (int)from);
     }
 
     /// <summary>
@@ -259,7 +291,7 @@ public class HttpContext : IHttpContext
         // RFC 6455 §4.2.1: the request must carry "Connection: Upgrade". The field is a
         // comma-separated list of case-insensitive tokens.
         if (!Request.Headers.TryGetValues("Connection", out var connectionValues) ||
-            !connectionValues.Any(value => value != null && value.Split(',').Any(part => string.Equals(part.Trim(), "Upgrade", StringComparison.OrdinalIgnoreCase))))
+            !WebSocketBuilderExtensions.HeaderContainsToken(connectionValues, "Upgrade"))
         {
             throw new WebSocketHandshakeException("The 'Connection' header must contain the 'Upgrade' token.");
         }

@@ -6,7 +6,6 @@ using LHZ.WebSocket.Enums;
 using LHZ.WebSocket.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Primitives;
 
 namespace LHZ.WebSocket.AspNetCore;
 
@@ -170,7 +169,7 @@ public static class WebSocketBuilderExtensions
     /// <param name="headerValue">The raw header value.</param>
     /// <param name="token">The token to look for.</param>
     /// <returns><c>true</c> when the token is present.</returns>
-    internal static bool HeaderContainsToken(StringValues headerValue, string token)
+    internal static bool HeaderContainsToken(IEnumerable<string?> headerValue, string token)
     {
         foreach (var value in headerValue)
         {

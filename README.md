@@ -58,6 +58,7 @@ Notes:
 - The delegate is invoked only when the request carries a WebSocket `Upgrade` header. The token is matched case-insensitively and is also recognised inside a comma-separated field such as `Upgrade: h2c, websocket` (RFC 7230).
 - Call `await context.HttpUpgradeAsync()` to perform the handshake and create a `WebSocketClient`. Invalid handshake requests are rejected with a `400 Bad Request` response: a `Connection` header without the `Upgrade` token, a missing `Sec-WebSocket-Key` or one that is not a base64-encoded 16-byte value, or a `Sec-WebSocket-Version` other than 13.
 - A context can only be upgraded once; a second attempt throws `InvalidOperationException`.
+- If the upgrade itself fails (for example the client disconnects mid-handshake), the context ends up `Rejected` and the exception is rethrown. Disposing a context while its handshake is still in progress has the same effect: the pending upgrade throws `InvalidOperationException` and its stream is released.
 - Use `app.GetWebSocketClientCount()` and `app.GetWebSocketClients()` to inspect active clients.
 
 ## API Summary
